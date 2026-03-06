@@ -110,6 +110,26 @@ Feel free to join us on the [Yomitan Discord](https://discord.gg/YkQrXW6TXF).
 
 For more information, see [Contributing](./CONTRIBUTING.md#setup).
 
+### Building for Safari on macOS
+
+Run `./build-safari.sh --version 26.2.17.0` to generate:
+
+- `builds/yomitan-safari-web-extension` with the Safari-ready manifest and resources.
+- `builds/yomitan-safari-app` with the Xcode project created by Apple's Safari converter.
+
+Then build and run the generated app from Xcode, or from Terminal:
+
+```sh
+xcodebuild -project "builds/yomitan-safari-app/Yomitan Safari.xcodeproj" \
+  -scheme "Yomitan Safari" \
+  -configuration Debug \
+  -destination 'platform=macOS' \
+  build
+```
+
+After launching the generated app once, enable the extension in Safari under `Safari > Settings > Extensions`.
+Dictionary import still happens from Yomitan's settings page, and the default scan modifier remains `Shift`.
+
 ## Third-Party Libraries
 
 Yomitan uses several third-party libraries to function.

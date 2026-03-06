@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {isObjectNotArray} from '../core/object-utilities.js';
+
 /**
  * This class is used to generate `fetch()` requests on the background page
  * with additional controls over anonymity and error handling.
@@ -35,6 +37,7 @@ export class RequestBuilder {
      * Initializes the instance.
      */
     async prepare() {
+        if (!this._hasDeclarativeNetRequest()) { return; }
         try {
             await this._clearDynamicRules();
             await this._clearSessionRules();
@@ -50,6 +53,10 @@ export class RequestBuilder {
      * @returns {Promise<Response>} The response of the `fetch` call.
      */
     async fetchAnonymous(url, init) {
+        if (!this._hasDeclarativeNetRequest()) {
+            return await fetch(url, {...init, credentials: 'omit'});
+        }
+
         const id = this._getNewRuleId();
         const originUrl = this._getOriginURL(url);
         url = encodeURI(decodeURIComponent(url));
@@ -166,6 +173,20 @@ export class RequestBuilder {
     }
 
     // Private
+
+    /**
+     * @returns {boolean}
+     */
+    _hasDeclarativeNetRequest() {
+        const {declarativeNetRequest: dnr} = chrome;
+        return (
+            isObjectNotArray(dnr) &&
+            typeof dnr.getSessionRules === 'function' &&
+            typeof dnr.updateSessionRules === 'function' &&
+            typeof dnr.getDynamicRules === 'function' &&
+            typeof dnr.updateDynamicRules === 'function'
+        );
+    }
 
     /** */
     async _clearSessionRules() {

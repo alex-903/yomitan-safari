@@ -34,6 +34,7 @@ import {OptionsUtil} from '../data/options-util.js';
 import {getAllPermissions, hasPermissions, hasRequiredPermissionsForOptions} from '../data/permissions-util.js';
 import {DictionaryDatabase} from '../dictionary/dictionary-database.js';
 import {Environment} from '../extension/environment.js';
+import {getTemporaryStorage} from '../extension/temporary-storage.js';
 import {CacheMap} from '../general/cache-map.js';
 import {ObjectPropertyAccessor} from '../general/object-property-accessor.js';
 import {distributeFuriganaInflected, isCodePointJapanese, convertKatakanaToHiragana as jpConvertKatakanaToHiragana} from '../language/ja/japanese.js';
@@ -2779,11 +2780,12 @@ export class Backend {
      * @returns {Promise<void>}
      */
     async _openWelcomeGuidePageOnce() {
-        const result = await chrome.storage.session.get(['openedWelcomePage']);
+        const storage = getTemporaryStorage();
+        const result = await storage.get(['openedWelcomePage']);
         if (!result.openedWelcomePage) {
             await Promise.all([
                 this._openWelcomeGuidePage(),
-                chrome.storage.session.set({openedWelcomePage: true}),
+                storage.set({openedWelcomePage: true}),
             ]);
         }
     }

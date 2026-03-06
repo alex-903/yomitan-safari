@@ -110,6 +110,8 @@ export class Frontend {
         this._isPointerOverPopup = false;
         /** @type {?import('settings').OptionsContext} */
         this._optionsContextOverride = null;
+        /** @type {?HTMLDivElement} */
+        this._textIndicatorContainer = null;
 
         /* eslint-disable @stylistic/no-multi-spaces */
         /** @type {import('application').ApiMap} */
@@ -381,7 +383,10 @@ export class Frontend {
     /**
      * @returns {void}
      */
-    _onTextScannerClear() {
+    _onTextScannerClear({reason}) {
+        if (this._isSafariInlinePopupMode() && reason === 'mousedown' && this._popup !== null && this._popup.isPointerOver()) {
+            return;
+        }
         this._clearSelection(false);
     }
 
@@ -402,7 +407,8 @@ export class Frontend {
     _onSearchEmpty() {
         const scanningOptions = /** @type {import('settings').ProfileOptions} */ (this._options).scanning;
         if (scanningOptions.autoHideResults) {
-            void this._clearSelectionDelayed(scanningOptions.hideDelay, false, false);
+            const delay = this._isSafariInlinePopupMode() ? 2000 : scanningOptions.hideDelay;
+            void this._clearSelectionDelayed(delay, false, false);
         }
     }
 
@@ -434,7 +440,8 @@ export class Frontend {
         if (!this._options) { return; }
         const {scanning: {hidePopupOnCursorExit, hidePopupOnCursorExitDelay}} = this._options;
         if (hidePopupOnCursorExit) {
-            void this._clearSelectionDelayed(hidePopupOnCursorExitDelay, false, false);
+            const delay = this._isSafariInlinePopupMode() ? 2000 : hidePopupOnCursorExitDelay;
+            void this._clearSelectionDelayed(delay, false, false);
         }
     }
 
@@ -448,6 +455,7 @@ export class Frontend {
             void this._popup.hide(!passive);
             this._isPointerOverPopup = false;
         }
+        this._clearTextIndicator();
         this._textScanner.clearSelection();
     }
 
@@ -551,12 +559,17 @@ export class Frontend {
         const preventMiddleMouseOnTextHover = scanningOptions.preventMiddleMouse.onTextHover;
         const preventBackForwardOnPage = this._getPreventSecondaryMouseValueForPageType(scanningOptions.preventBackForward);
         const preventBackForwardOnTextHover = scanningOptions.preventBackForward.onTextHover;
+        const scanningInputs = (
+            this._isSafariInlinePopupMode() ?
+            this._getSafariInlineScanningInputs(scanningOptions.inputs) :
+            scanningOptions.inputs
+        );
         this._textScanner.language = options.general.language;
         this._textScanner.setOptions({
-            inputs: scanningOptions.inputs,
+            inputs: scanningInputs,
             deepContentScan: scanningOptions.deepDomScan,
             normalizeCssZoom: scanningOptions.normalizeCssZoom,
-            selectText: scanningOptions.selectText,
+            selectText: (this._isSafariInlinePopupMode() ? false : scanningOptions.selectText),
             delay: scanningOptions.delay,
             scanLength: scanningOptions.length,
             layoutAwareScan: scanningOptions.layoutAwareScan,
@@ -582,6 +595,29 @@ export class Frontend {
         this._updateContentScale();
 
         await this._textScanner.searchLast();
+    }
+
+    _isSafariInlinePopupMode() {
+        return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+    }
+
+    _getSafariInlineScanningInputs(inputs) {
+        if (!Array.isArray(inputs)) { return inputs; }
+        return inputs.map((input) => {
+            if (!(typeof input === 'object' && input !== null)) { return input; }
+            const {types} = input;
+            const isMouseInput = (
+                typeof types === 'object' &&
+                types !== null &&
+                types.mouse === true
+            );
+            if (!isMouseInput) { return input; }
+            return {
+                ...input,
+                include: '',
+                exclude: 'mouse0',
+            };
+        });
     }
 
     /**
@@ -819,6 +855,7 @@ export class Frontend {
      * @returns {Promise<void>}
      */
     _showPopupContent(textSource, optionsContext, details) {
+        this._updateTextIndicator(textSource);
         const sourceRects = [];
         for (const {left, top, right, bottom} of textSource.getRects()) {
             sourceRects.push({left, top, right, bottom});
@@ -890,8 +927,78 @@ export class Frontend {
             this._popup !== null &&
             await this._popup.isVisible()
         ) {
+            this._updateTextIndicator(textSource);
             void this._showPopupContent(textSource, null, null);
         }
+    }
+
+    /**
+     * @param {import('text-source').TextSource} textSource
+     * @returns {void}
+     */
+    _updateTextIndicator(textSource) {
+        if (!this._isSafariInlinePopupMode()) { return; }
+
+        const rects = textSource.getRects();
+        if (!(Array.isArray(rects) && rects.length > 0)) {
+            this._clearTextIndicator();
+            return;
+        }
+
+        const container = this._getTextIndicatorContainer();
+        container.replaceChildren();
+
+        for (const {left, right, bottom} of rects) {
+            const width = Math.max(0, right - left);
+            if (width <= 0) { continue; }
+
+            const line = document.createElement('div');
+            Object.assign(line.style, {
+                position: 'fixed',
+                left: `${left}px`,
+                top: `${Math.max(0, bottom - 2)}px`,
+                width: `${width}px`,
+                height: '0',
+                borderBottom: '2px dotted rgba(37, 99, 235, 0.95)',
+                boxSizing: 'border-box',
+                pointerEvents: 'none',
+            });
+            container.appendChild(line);
+        }
+    }
+
+    /**
+     * @returns {HTMLDivElement}
+     */
+    _getTextIndicatorContainer() {
+        let {_textIndicatorContainer: container} = this;
+        if (container !== null && container.isConnected) {
+            return container;
+        }
+
+        container = document.createElement('div');
+        container.className = 'yomitan-inline-text-indicator';
+        Object.assign(container.style, {
+            position: 'fixed',
+            left: '0',
+            top: '0',
+            width: '0',
+            height: '0',
+            zIndex: '2147483646',
+            pointerEvents: 'none',
+        });
+        document.documentElement.appendChild(container);
+        this._textIndicatorContainer = container;
+        return container;
+    }
+
+    /**
+     * @returns {void}
+     */
+    _clearTextIndicator() {
+        const {_textIndicatorContainer: container} = this;
+        if (container === null) { return; }
+        container.replaceChildren();
     }
 
     /**
