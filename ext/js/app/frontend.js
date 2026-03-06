@@ -171,6 +171,7 @@ export class Frontend {
         this._textScanner.prepare();
 
         window.addEventListener('resize', this._onResize.bind(this), false);
+        window.addEventListener('scroll', this._onScroll.bind(this), true);
         addFullscreenChangeEventListener(this._updatePopup.bind(this));
 
         const {visualViewport} = window;
@@ -342,6 +343,13 @@ export class Frontend {
      * @returns {void}
      */
     _onResize() {
+        void this._updatePopupPosition();
+    }
+
+    /**
+     * @returns {void}
+     */
+    _onScroll() {
         void this._updatePopupPosition();
     }
 

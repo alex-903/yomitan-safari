@@ -1944,8 +1944,6 @@ export class Backend {
         } else {
             const options = this._getProfileOptions({current: true}, false);
             if (!options.general.enable) {
-                text = 'off';
-                color = '#555555';
                 status = 'Disabled';
             } else if (!this._hasRequiredPermissionsForSettings(options)) {
                 text = '!';
