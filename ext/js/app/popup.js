@@ -538,7 +538,12 @@ export class Popup extends EventDispatcher {
             throw new Error('Options not initialized');
         }
 
-        const useSecurePopupFrameUrl = this._useSecureFrameUrl;
+        // Safari blocks the page from navigating an extension iframe via contentDocument,
+        // so use the regular src-based path there.
+        const useSecurePopupFrameUrl = (
+            this._useSecureFrameUrl &&
+            !this._targetOrigin.startsWith('safari-web-extension://')
+        );
 
         await this._setUpContainer(this._useShadowDom);
 
@@ -548,14 +553,14 @@ export class Popup extends EventDispatcher {
             frame.removeAttribute('srcdoc');
             this._observeFullscreen(true);
             this._onFullscreenChanged();
-            const {contentDocument} = frame;
-            if (contentDocument === null) {
-                // This can occur when running inside a sandboxed frame without "allow-same-origin"
-                // Custom error is used to detect a passive error which should be ignored
-                throw new PopupError('Popup not supported in this context', this);
-            }
             const url = chrome.runtime.getURL('/popup.html');
             if (useSecurePopupFrameUrl) {
+                const {contentDocument} = frame;
+                if (contentDocument === null) {
+                    // This can occur when running inside a sandboxed frame without "allow-same-origin"
+                    // Custom error is used to detect a passive error which should be ignored
+                    throw new PopupError('Popup not supported in this context', this);
+                }
                 contentDocument.location.href = url;
             } else {
                 frame.setAttribute('src', url);

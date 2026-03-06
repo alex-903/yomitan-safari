@@ -18,6 +18,7 @@
 
 import {FrameOffsetForwarder} from '../comm/frame-offset-forwarder.js';
 import {generateId} from '../core/utilities.js';
+import {PopupInline} from './popup-inline.js';
 import {PopupProxy} from './popup-proxy.js';
 import {PopupWindow} from './popup-window.js';
 import {Popup} from './popup.js';
@@ -134,12 +135,22 @@ export class PopupFactory {
             if (id === null) {
                 id = generateId(16);
             }
-            const popup = new Popup(
-                this._application,
-                id,
-                depth,
-                currentFrameId,
-                childrenSupported,
+            const popup = (
+                chrome.runtime.getURL('/').startsWith('safari-web-extension://') ?
+                new PopupInline(
+                    this._application,
+                    id,
+                    depth,
+                    currentFrameId,
+                    childrenSupported,
+                ) :
+                new Popup(
+                    this._application,
+                    id,
+                    depth,
+                    currentFrameId,
+                    childrenSupported,
+                )
             );
             if (parent !== null) {
                 if (parent.child !== null) {

@@ -213,6 +213,11 @@ export class FrameClient {
      * @returns {boolean}
      */
     static isFrameAboutBlank(frame) {
+        const {src} = frame;
+        if (typeof src === 'string' && src.length > 0) {
+            return /^about:blank(?:[#?]|$)/.test(src);
+        }
+
         try {
             const contentDocument = frame.contentDocument;
             if (contentDocument === null) { return false; }

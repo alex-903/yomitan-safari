@@ -20,6 +20,7 @@ import {fetchJson, fetchText} from '../core/fetch-utilities.js';
 import {parseJson} from '../core/json.js';
 import {isObjectNotArray} from '../core/object-utilities.js';
 import {escapeRegExp} from '../core/utilities.js';
+import {getTemporaryStorage} from '../extension/temporary-storage.js';
 import {TemplatePatcher} from '../templates/template-patcher.js';
 import {JsonSchema} from './json-schema.js';
 
@@ -298,8 +299,8 @@ export class OptionsUtil {
                 lineHeight: '1.5',
                 showAdvanced: false,
                 popupDisplayMode: 'default',
-                popupWidth: 400,
-                popupHeight: 250,
+                popupWidth: 300,
+                popupHeight: 400,
                 popupHorizontalOffset: 0,
                 popupVerticalOffset: 10,
                 popupHorizontalOffset2: 10,
@@ -309,7 +310,7 @@ export class OptionsUtil {
                 popupScalingFactor: 1,
                 popupScaleRelativeToPageZoom: false,
                 popupScaleRelativeToVisualViewport: true,
-                showGuide: true,
+                showGuide: false,
                 compactTags: false,
                 compactGlossaries: false,
                 mainDictionary: '',
@@ -1166,9 +1167,10 @@ export class OptionsUtil {
         }
 
         if (customTemplates && isObjectNotArray(chrome.storage)) {
-            void chrome.storage.session.set({needsCustomTemplatesWarning: true});
+            const storage = getTemporaryStorage();
+            void storage.set({needsCustomTemplatesWarning: true});
             await this._createTab(chrome.runtime.getURL('/welcome.html'));
-            void chrome.storage.session.set({openedWelcomePage: true});
+            void storage.set({openedWelcomePage: true});
         }
     }
 
@@ -1829,6 +1831,16 @@ export class OptionsUtil {
      */
     async _updateVersion74(options) {
         await this._applyAnkiFieldTemplatesPatch(options, '/data/templates/anki-field-templates-upgrade-v74.handlebars');
+    }
+
+    /**
+     *  - Disable opening the welcome guide on startup by default.
+     *  @type {import('options-util').UpdateFunction}
+     */
+    async _updateVersion75(options) {
+        for (const profile of options.profiles) {
+            profile.options.general.showGuide = false;
+        }
     }
 
     /**

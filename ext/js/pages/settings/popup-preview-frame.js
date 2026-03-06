@@ -133,8 +133,8 @@ export class PopupPreviewFrame {
         const options = await /** @type {(optionsContext: import('settings').OptionsContext) => Promise<import('settings').ProfileOptions>} */ (this._apiOptionsGetOld)(optionsContext);
         options.general.enable = true;
         options.general.debugInfo = false;
-        options.general.popupWidth = 400;
-        options.general.popupHeight = 250;
+        options.general.popupWidth = 300;
+        options.general.popupHeight = 400;
         options.general.popupHorizontalOffset = 0;
         options.general.popupVerticalOffset = 10;
         options.general.popupHorizontalOffset2 = 10;

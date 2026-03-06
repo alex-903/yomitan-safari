@@ -19,6 +19,7 @@
 import {Application} from '../application.js';
 import {DocumentFocusController} from '../dom/document-focus-controller.js';
 import {querySelectorNotNull} from '../dom/query-selector.js';
+import {getTemporaryStorage} from '../extension/temporary-storage.js';
 import {ExtensionContentController} from './common/extension-content-controller.js';
 import {DataTransmissionConsentController} from './settings/data-transmission-consent-controller.js';
 import {DictionaryController} from './settings/dictionary-controller.js';
@@ -55,10 +56,11 @@ async function setupGenericSettingsController(genericSettingController) {
 /** */
 async function checkNeedsCustomTemplatesWarning() {
     const key = 'needsCustomTemplatesWarning';
-    const result = await chrome.storage.session.get({[key]: false});
+    const storage = getTemporaryStorage();
+    const result = await storage.get({[key]: false});
     if (!result[key]) { return; }
     document.documentElement.dataset.warnCustomTemplates = 'true';
-    await chrome.storage.session.remove([key]);
+    await storage.remove([key]);
 }
 
 await Application.main(true, async (application) => {
