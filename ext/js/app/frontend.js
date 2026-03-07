@@ -112,6 +112,12 @@ export class Frontend {
         this._optionsContextOverride = null;
         /** @type {?HTMLDivElement} */
         this._textIndicatorContainer = null;
+        /** @type {boolean} */
+        this._safariInlineScanEnabled = false;
+        /** @type {boolean} */
+        this._safariShiftToggleArmed = false;
+        /** @type {boolean} */
+        this._safariShiftToggleInvalid = false;
 
         /* eslint-disable @stylistic/no-multi-spaces */
         /** @type {import('application').ApiMap} */
@@ -172,6 +178,8 @@ export class Frontend {
 
         window.addEventListener('resize', this._onResize.bind(this), false);
         window.addEventListener('scroll', this._onScroll.bind(this), true);
+        window.addEventListener('keydown', this._onKeyDown.bind(this), true);
+        window.addEventListener('keyup', this._onKeyUp.bind(this), true);
         addFullscreenChangeEventListener(this._updatePopup.bind(this));
 
         const {visualViewport} = window;
@@ -344,6 +352,42 @@ export class Frontend {
      */
     _onResize() {
         void this._updatePopupPosition();
+    }
+
+    /**
+     * @param {KeyboardEvent} e
+     * @returns {void}
+     */
+    _onKeyDown(e) {
+        if (!this._isSafariInlinePopupMode() || e.repeat) { return; }
+        if (e.key === 'Shift') {
+            if (!this._safariShiftToggleArmed) {
+                this._safariShiftToggleArmed = true;
+                this._safariShiftToggleInvalid = false;
+            }
+            return;
+        }
+        if (this._safariShiftToggleArmed) {
+            this._safariShiftToggleInvalid = true;
+        }
+    }
+
+    /**
+     * @param {KeyboardEvent} e
+     * @returns {void}
+     */
+    _onKeyUp(e) {
+        if (!this._isSafariInlinePopupMode() || e.key !== 'Shift') { return; }
+        if (this._safariShiftToggleArmed && !this._safariShiftToggleInvalid) {
+            this._safariInlineScanEnabled = !this._safariInlineScanEnabled;
+            this._updateTextScannerEnabled();
+            if (!this._safariInlineScanEnabled) {
+                this._clearSelection(true);
+                this._clearMousePosition();
+            }
+        }
+        this._safariShiftToggleArmed = false;
+        this._safariShiftToggleInvalid = false;
     }
 
     /**
@@ -891,7 +935,12 @@ export class Frontend {
      * @returns {void}
      */
     _updateTextScannerEnabled() {
-        const enabled = (this._options !== null && this._options.general.enable && !this._disabledOverride);
+        const enabled = (
+            this._options !== null &&
+            this._options.general.enable &&
+            !this._disabledOverride &&
+            (!this._isSafariInlinePopupMode() || this._safariInlineScanEnabled)
+        );
         if (enabled === this._textScanner.isEnabled()) { return; }
         this._textScanner.setEnabled(enabled);
         if (this._textScannerHasBeenEnabled) {
