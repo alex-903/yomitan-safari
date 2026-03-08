@@ -166,6 +166,7 @@ export class Frontend {
      * Prepares the instance for use.
      */
     async prepare() {
+        await this._restoreSafariInlineScanEnabled();
         await this.updateOptions();
         try {
             const {zoomFactor} = await this._application.api.getZoom();
@@ -380,6 +381,7 @@ export class Frontend {
         if (!this._isSafariInlinePopupMode() || e.key !== 'Shift') { return; }
         if (this._safariShiftToggleArmed && !this._safariShiftToggleInvalid) {
             this._safariInlineScanEnabled = !this._safariInlineScanEnabled;
+            void this._persistSafariInlineScanEnabled();
             this._updateTextScannerEnabled();
             if (!this._safariInlineScanEnabled) {
                 this._clearSelection(true);
@@ -433,9 +435,11 @@ export class Frontend {
     }
 
     /**
+     * @param {import('text-scanner').EventArgument<'clear'>} details
      * @returns {void}
      */
-    _onTextScannerClear({reason}) {
+    _onTextScannerClear(details) {
+        const {reason} = details;
         if (this._isSafariInlinePopupMode() && reason === 'mousedown' && this._popup !== null && this._popup.isPointerOver()) {
             return;
         }
@@ -611,7 +615,7 @@ export class Frontend {
         const preventMiddleMouseOnTextHover = scanningOptions.preventMiddleMouse.onTextHover;
         const preventBackForwardOnPage = this._getPreventSecondaryMouseValueForPageType(scanningOptions.preventBackForward);
         const preventBackForwardOnTextHover = scanningOptions.preventBackForward.onTextHover;
-        const scanningInputs = (
+        const scanningInputs = /** @type {import('settings').ScanningInput[]} */ (
             this._isSafariInlinePopupMode() ?
             this._getSafariInlineScanningInputs(scanningOptions.inputs) :
             scanningOptions.inputs
@@ -649,14 +653,20 @@ export class Frontend {
         await this._textScanner.searchLast();
     }
 
+    /**
+     * @returns {boolean}
+     */
     _isSafariInlinePopupMode() {
         return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
     }
 
+    /**
+     * @param {import('settings').ScanningInput[]} inputs
+     * @returns {import('settings').ScanningInput[]}
+     */
     _getSafariInlineScanningInputs(inputs) {
         if (!Array.isArray(inputs)) { return inputs; }
         return inputs.map((input) => {
-            if (!(typeof input === 'object' && input !== null)) { return input; }
             const {types} = input;
             const isMouseInput = (
                 typeof types === 'object' &&
@@ -670,6 +680,30 @@ export class Frontend {
                 exclude: 'mouse0',
             };
         });
+    }
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async _restoreSafariInlineScanEnabled() {
+        if (!this._isSafariInlinePopupMode()) { return; }
+        try {
+            this._safariInlineScanEnabled = await this._application.api.getSafariInlineScanEnabled();
+        } catch (e) {
+            log.error(e);
+        }
+    }
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async _persistSafariInlineScanEnabled() {
+        if (!this._isSafariInlinePopupMode()) { return; }
+        try {
+            await this._application.api.setSafariInlineScanEnabled(this._safariInlineScanEnabled);
+        } catch (e) {
+            log.error(e);
+        }
     }
 
     /**

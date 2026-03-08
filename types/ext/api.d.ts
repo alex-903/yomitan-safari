@@ -170,11 +170,37 @@ type ApiSurface = {
         params: void;
         return: number | null;
     };
+    getAnkiDeckNames: {
+        params: void;
+        return: string[];
+    };
+    getAnkiModelNames: {
+        params: void;
+        return: string[];
+    };
+    getAnkiModelFieldNames: {
+        params: {
+            modelName: string;
+        };
+        return: string[];
+    };
     addAnkiNote: {
         params: {
             note: Anki.Note;
         };
         return: Anki.NoteId | null;
+    };
+    addAnkiNotes: {
+        params: {
+            notes: Anki.Note[];
+        };
+        return: (Anki.NoteId | null)[] | null;
+    };
+    canAddAnkiNotes: {
+        params: {
+            notes: Anki.Note[];
+        };
+        return: boolean[];
     };
     updateAnkiNote: {
         params: {
@@ -280,6 +306,16 @@ type ApiSurface = {
         return: {
             zoomFactor: number;
         };
+    };
+    getSafariInlineScanEnabled: {
+        params: void;
+        return: boolean;
+    };
+    setSafariInlineScanEnabled: {
+        params: {
+            enabled: boolean;
+        };
+        return: boolean;
     };
     getDefaultAnkiFieldTemplates: {
         params: void;

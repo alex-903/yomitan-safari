@@ -358,6 +358,22 @@
                     "item": "clipboardRead"
                 },
                 {
+                    "action": "remove",
+                    "path": [
+                        "optional_permissions"
+                    ],
+                    "item": "nativeMessaging"
+                },
+                {
+                    "action": "add",
+                    "path": [
+                        "permissions"
+                    ],
+                    "items": [
+                        "nativeMessaging"
+                    ]
+                },
+                {
                     "action": "delete",
                     "path": [
                         "content_scripts",

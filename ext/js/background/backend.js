@@ -140,6 +140,8 @@ export class Backend {
         this._permissions = null;
         /** @type {Map<string, (() => void)[]>} */
         this._applicationReadyHandlers = new Map();
+        /** @type {Map<number, boolean>} */
+        this._safariInlineScanEnabledTabs = new Map();
 
         /* eslint-disable @stylistic/no-multi-spaces */
         /** @type {import('api').ApiMap} */
@@ -153,7 +155,12 @@ export class Backend {
             ['parseText',                    this._onApiParseText.bind(this)],
             ['getAnkiConnectVersion',        this._onApiGetAnkiConnectVersion.bind(this)],
             ['isAnkiConnected',              this._onApiIsAnkiConnected.bind(this)],
+            ['getAnkiDeckNames',             this._onApiGetAnkiDeckNames.bind(this)],
+            ['getAnkiModelNames',            this._onApiGetAnkiModelNames.bind(this)],
+            ['getAnkiModelFieldNames',       this._onApiGetAnkiModelFieldNames.bind(this)],
             ['addAnkiNote',                  this._onApiAddAnkiNote.bind(this)],
+            ['addAnkiNotes',                 this._onApiAddAnkiNotes.bind(this)],
+            ['canAddAnkiNotes',              this._onApiCanAddAnkiNotes.bind(this)],
             ['updateAnkiNote',               this._onApiUpdateAnkiNote.bind(this)],
             ['getAnkiNoteInfo',              this._onApiGetAnkiNoteInfo.bind(this)],
             ['injectAnkiNoteMedia',          this._onApiInjectAnkiNoteMedia.bind(this)],
@@ -169,6 +176,8 @@ export class Backend {
             ['getEnvironmentInfo',           this._onApiGetEnvironmentInfo.bind(this)],
             ['clipboardGet',                 this._onApiClipboardGet.bind(this)],
             ['getZoom',                      this._onApiGetZoom.bind(this)],
+            ['getSafariInlineScanEnabled',   this._onApiGetSafariInlineScanEnabled.bind(this)],
+            ['setSafariInlineScanEnabled',   this._onApiSetSafariInlineScanEnabled.bind(this)],
             ['getDefaultAnkiFieldTemplates', this._onApiGetDefaultAnkiFieldTemplates.bind(this)],
             ['getDictionaryInfo',            this._onApiGetDictionaryInfo.bind(this)],
             ['purgeDatabase',                this._onApiPurgeDatabase.bind(this)],
@@ -251,6 +260,10 @@ export class Backend {
         if (isObjectNotArray(chrome.tabs) && isObjectNotArray(chrome.tabs.onZoomChange)) {
             const onZoomChange = this._onWebExtensionEventWrapper(this._onZoomChange.bind(this));
             chrome.tabs.onZoomChange.addListener(onZoomChange);
+        }
+        if (isObjectNotArray(chrome.tabs) && isObjectNotArray(chrome.tabs.onRemoved)) {
+            const onTabRemoved = this._onWebExtensionEventWrapper(this._onTabRemoved.bind(this));
+            chrome.tabs.onRemoved.addListener(onTabRemoved);
         }
 
         const onMessage = this._onMessageWrapper.bind(this);
@@ -482,6 +495,14 @@ export class Backend {
     }
 
     /**
+     * @param {number} tabId
+     * @returns {void}
+     */
+    _onTabRemoved(tabId) {
+        void this._clearSafariInlineScanEnabledTabState(tabId);
+    }
+
+    /**
      * @returns {void}
      */
     _onPermissionsChanged() {
@@ -616,9 +637,34 @@ export class Backend {
         return await this._anki.isConnected();
     }
 
+    /** @type {import('api').ApiHandler<'getAnkiDeckNames'>} */
+    async _onApiGetAnkiDeckNames() {
+        return await this._anki.getDeckNames();
+    }
+
+    /** @type {import('api').ApiHandler<'getAnkiModelNames'>} */
+    async _onApiGetAnkiModelNames() {
+        return await this._anki.getModelNames();
+    }
+
+    /** @type {import('api').ApiHandler<'getAnkiModelFieldNames'>} */
+    async _onApiGetAnkiModelFieldNames({modelName}) {
+        return await this._anki.getModelFieldNames(modelName);
+    }
+
     /** @type {import('api').ApiHandler<'addAnkiNote'>} */
     async _onApiAddAnkiNote({note}) {
         return await this._anki.addNote(note);
+    }
+
+    /** @type {import('api').ApiHandler<'addAnkiNotes'>} */
+    async _onApiAddAnkiNotes({notes}) {
+        return await this._anki.addNotes(notes);
+    }
+
+    /** @type {import('api').ApiHandler<'canAddAnkiNotes'>} */
+    async _onApiCanAddAnkiNotes({notes}) {
+        return await this._anki.canAddNotes(notes);
     }
 
     /** @type {import('api').ApiHandler<'updateAnkiNote'>} */
@@ -916,6 +962,21 @@ export class Backend {
                 }
             });
         });
+    }
+
+    /** @type {import('api').ApiHandler<'getSafariInlineScanEnabled'>} */
+    async _onApiGetSafariInlineScanEnabled(_params, sender) {
+        const tabId = sender.tab?.id;
+        if (typeof tabId !== 'number') { return false; }
+        return await this._getSafariInlineScanEnabledTabState(tabId);
+    }
+
+    /** @type {import('api').ApiHandler<'setSafariInlineScanEnabled'>} */
+    async _onApiSetSafariInlineScanEnabled({enabled}, sender) {
+        const tabId = sender.tab?.id;
+        if (typeof tabId !== 'number') { return false; }
+        await this._setSafariInlineScanEnabledTabState(tabId, enabled);
+        return true;
     }
 
     /** @type {import('api').ApiHandler<'getDefaultAnkiFieldTemplates'>} */
@@ -2928,6 +2989,54 @@ export class Backend {
             results.push({content: content2, dictionary, height, mediaType, path, width});
         }
         return results;
+    }
+
+    /**
+     * @param {number} tabId
+     * @returns {string}
+     */
+    _getSafariInlineScanEnabledStorageKey(tabId) {
+        return `safariInlineScanEnabledTab:${tabId}`;
+    }
+
+    /**
+     * @param {number} tabId
+     * @returns {Promise<boolean>}
+     */
+    async _getSafariInlineScanEnabledTabState(tabId) {
+        if (this._safariInlineScanEnabledTabs.has(tabId)) {
+            return this._safariInlineScanEnabledTabs.get(tabId) === true;
+        }
+
+        const storage = getTemporaryStorage();
+        const key = this._getSafariInlineScanEnabledStorageKey(tabId);
+        const result = await storage.get([key]);
+        const enabled = result[key] === true;
+        this._safariInlineScanEnabledTabs.set(tabId, enabled);
+        return enabled;
+    }
+
+    /**
+     * @param {number} tabId
+     * @param {boolean} enabled
+     * @returns {Promise<void>}
+     */
+    async _setSafariInlineScanEnabledTabState(tabId, enabled) {
+        this._safariInlineScanEnabledTabs.set(tabId, enabled);
+        const storage = getTemporaryStorage();
+        const key = this._getSafariInlineScanEnabledStorageKey(tabId);
+        await storage.set({[key]: enabled});
+    }
+
+    /**
+     * @param {number} tabId
+     * @returns {Promise<void>}
+     */
+    async _clearSafariInlineScanEnabledTabState(tabId) {
+        this._safariInlineScanEnabledTabs.delete(tabId);
+        const storage = getTemporaryStorage();
+        const key = this._getSafariInlineScanEnabledStorageKey(tabId);
+        await storage.remove([key]);
     }
 
     /**
