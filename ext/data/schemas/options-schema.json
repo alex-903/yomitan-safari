@@ -230,7 +230,7 @@
                                     },
                                     "showGuide": {
                                         "type": "boolean",
-                                        "default": true
+                                        "default": false
                                     },
                                     "enableContextMenuScanSelected": {
                                         "type": "boolean",

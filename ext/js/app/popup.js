@@ -74,9 +74,9 @@ export class Popup extends EventDispatcher {
         this._hidePopupTimer = null;
 
         /** @type {number} */
-        this._initialWidth = 400;
+        this._initialWidth = 265;
         /** @type {number} */
-        this._initialHeight = 250;
+        this._initialHeight = 400;
         /** @type {number} */
         this._horizontalOffset = 0;
         /** @type {number} */

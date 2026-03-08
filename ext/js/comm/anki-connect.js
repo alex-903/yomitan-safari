@@ -41,6 +41,8 @@ export class AnkiConnect {
         this._versionCheckPromise = null;
         /** @type {?string} */
         this._apiKey = null;
+        /** @type {string[]} */
+        this._nativeMessagingApplications = ['yomitan_anki'];
     }
 
     /**
@@ -459,42 +461,34 @@ export class AnkiConnect {
         /** @type {import('anki').MessageBody} */
         const body = {action, params, version: this._localVersion};
         if (this._apiKey !== null) { body.key = this._apiKey; }
+
+        /** @type {{status: number, responseText: string}} */
         let response;
         try {
             if (this._server === null) { throw new Error('Server URL is null'); }
-            response = await fetch(this._server, {
-                method: 'POST',
-                mode: 'cors',
-                cache: 'default',
-                credentials: 'omit',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                redirect: 'follow',
-                referrerPolicy: 'no-referrer',
-                body: JSON.stringify(body),
-            });
+            response = this._useNativeMessagingBridge(this._server) ?
+                await this._invokeNative(this._server, body) :
+                await this._invokeFetch(this._server, body);
         } catch (e) {
             const error = new ExtensionError('Anki connection failure');
             error.data = {action, params, originalError: e};
             throw error;
         }
 
-        if (!response.ok) {
-            const error = new ExtensionError(`Anki connection error: ${response.status}`);
-            error.data = {action, params, status: response.status};
+        const {status, responseText} = response;
+        if (status < 200 || status >= 300) {
+            const error = new ExtensionError(`Anki connection error: ${status}`);
+            error.data = {action, params, status, responseText};
             throw error;
         }
 
-        let responseText = null;
         /** @type {unknown} */
         let result;
         try {
-            responseText = await response.text();
             result = parseJson(responseText);
         } catch (e) {
             const error = new ExtensionError('Invalid Anki response');
-            error.data = {action, params, status: response.status, responseText, originalError: e};
+            error.data = {action, params, status, responseText, originalError: e};
             throw error;
         }
 
@@ -504,7 +498,7 @@ export class AnkiConnect {
                 // eslint-disable-next-line @typescript-eslint/no-base-to-string
                 const error = new ExtensionError(`Anki error: ${apiError}`);
                 // eslint-disable-next-line @typescript-eslint/no-base-to-string
-                error.data = {action, params, status: response.status, apiError: typeof apiError === 'string' ? apiError : `${apiError}`};
+                error.data = {action, params, status, apiError: typeof apiError === 'string' ? apiError : `${apiError}`};
                 throw error;
             }
         }
@@ -585,6 +579,187 @@ export class AnkiConnect {
     async _getVersion() {
         const version = await this._invoke('version', {});
         return typeof version === 'number' ? version : 0;
+    }
+
+    /**
+     * @param {string} server
+     * @param {import('anki').MessageBody} body
+     * @returns {Promise<{status: number, responseText: string}>}
+     */
+    async _invokeFetch(server, body) {
+        const response = await fetch(server, {
+            method: 'POST',
+            mode: 'cors',
+            cache: 'default',
+            credentials: 'omit',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            redirect: 'follow',
+            referrerPolicy: 'no-referrer',
+            body: JSON.stringify(body),
+        });
+
+        return {
+            status: response.status,
+            responseText: await response.text(),
+        };
+    }
+
+    /**
+     * @param {string} server
+     * @param {import('anki').MessageBody} body
+     * @returns {Promise<{status: number, responseText: string}>}
+     */
+    async _invokeNative(server, body) {
+        const result = await this._sendNativeMessage({
+            action: 'ankiRequest',
+            url: server,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+        });
+
+        if (!isObjectNotArray(result)) {
+            throw new Error('Invalid native response');
+        }
+
+        const {status, responseText, error} = result;
+        if (typeof error === 'string' && error.length > 0) {
+            throw new Error(error);
+        }
+        if (typeof status !== 'number') {
+            throw new Error('Invalid native response status');
+        }
+        if (typeof responseText !== 'string') {
+            throw new Error('Invalid native response body');
+        }
+
+        return {status, responseText};
+    }
+
+    /**
+     * @param {import('core').SerializableObject} message
+     * @returns {Promise<unknown>}
+     */
+    _sendNativeMessage(message) {
+        return this._sendNativeMessageWithFallback(this._nativeMessagingApplications, message);
+    }
+
+    /**
+     * @param {string[]} applications
+     * @param {import('core').SerializableObject} message
+     * @returns {Promise<unknown>}
+     */
+    async _sendNativeMessageWithFallback(applications, message) {
+        /** @type {{application: string, error: unknown}[]} */
+        const errors = [];
+        for (const application of applications) {
+            try {
+                return await this._sendNativeMessageSingle(application, message);
+            } catch (error) {
+                errors.push({application, error});
+            }
+        }
+
+        if (errors.length === 0) {
+            throw new Error('No native messaging applications configured');
+        }
+
+        throw new Error(`Native messaging failed: ${errors.map(({application, error}) => `${application}: ${this._getErrorMessage(error)}`).join('; ')}`);
+    }
+
+    /**
+     * @param {string} application
+     * @param {import('core').SerializableObject} message
+     * @returns {Promise<unknown>}
+     */
+    _sendNativeMessageSingle(application, message) {
+        return new Promise((resolve, reject) => {
+            let handled = false;
+            const onResolve = (value) => {
+                if (handled) { return; }
+                handled = true;
+                resolve(value);
+            };
+            const onReject = (error) => {
+                if (handled) { return; }
+                handled = true;
+                reject(error);
+            };
+
+            try {
+                const maybePromise = chrome.runtime.sendNativeMessage(application, message, (response) => {
+                    const error = chrome.runtime.lastError;
+                    if (error) {
+                        onReject(new Error(error.message));
+                    } else {
+                        onResolve(response);
+                    }
+                });
+
+                if (typeof maybePromise === 'object' && maybePromise !== null && typeof maybePromise.then === 'function') {
+                    maybePromise.then(onResolve, (error) => {
+                        onReject(error instanceof Error ? error : new Error(`${error}`));
+                    });
+                }
+            } catch (e) {
+                onReject(e);
+            }
+        });
+    }
+
+    /**
+     * @param {unknown} error
+     * @returns {string}
+     */
+    _getErrorMessage(error) {
+        if (error instanceof Error && typeof error.message === 'string' && error.message.length > 0) {
+            return error.message;
+        }
+        return `${error}`;
+    }
+
+    /**
+     * @param {string} server
+     * @returns {boolean}
+     */
+    _useNativeMessagingBridge(server) {
+        return this._isSafariWebExtension() && this._isLocalhostUrl(server);
+    }
+
+    /**
+     * @returns {boolean}
+     */
+    _isSafariWebExtension() {
+        try {
+            return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /**
+     * @param {string} urlString
+     * @returns {boolean}
+     */
+    _isLocalhostUrl(urlString) {
+        try {
+            const {hostname} = new URL(urlString);
+            switch (hostname.toLowerCase()) {
+                case 'localhost':
+                case '127.0.0.1':
+                case '[::1]':
+                case '::1':
+                    return true;
+                default:
+                    return false;
+            }
+        } catch (e) {
+            return false;
+        }
     }
 
     /**

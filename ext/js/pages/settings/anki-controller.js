@@ -16,7 +16,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import {AnkiConnect} from '../../comm/anki-connect.js';
 import {EventListenerCollection} from '../../core/event-listener-collection.js';
 import {ExtensionError} from '../../core/extension-error.js';
 import {log} from '../../core/log.js';
@@ -41,10 +40,12 @@ export class AnkiController {
         this._settingsController = settingsController;
         /** @type {import('./modal-controller.js').ModalController} */
         this._modalController = modalController;
-        /** @type {AnkiConnect} */
-        this._ankiConnect = new AnkiConnect();
         /** @type {string} */
         this._language = 'ja';
+        /** @type {?string} */
+        this._ankiServer = null;
+        /** @type {boolean} */
+        this._ankiEnabled = false;
         /** @type {SelectorObserver<AnkiCardController>} */
         this._selectorObserver = new SelectorObserver({
             selector: '.anki-card',
@@ -188,7 +189,7 @@ export class AnkiController {
      * @returns {Promise<string[]>}
      */
     async getModelFieldNames(model) {
-        return await this._ankiConnect.getModelFieldNames(model);
+        return await this._application.api.getAnkiModelFieldNames(model);
     }
 
     /**
@@ -222,13 +223,8 @@ export class AnkiController {
      * @param {import('settings-controller').EventArgument<'optionsChanged'>} details
      */
     _onOptionsChanged({options: {anki, dictionaries, general: {language}}}) {
-        /** @type {?string} */
-        let apiKey = anki.apiKey;
-        if (apiKey === '') { apiKey = null; }
-        this._ankiConnect.server = anki.server;
-        this._ankiConnect.enabled = anki.enable;
-        this._ankiConnect.apiKey = apiKey;
-
+        this._ankiServer = anki.server;
+        this._ankiEnabled = anki.enable;
         this._language = language;
 
         this._selectorObserver.disconnect();
@@ -251,8 +247,8 @@ export class AnkiController {
      * @param {import('dom-data-binder').SettingChangedEvent} event
      */
     _onAnkiEnableChanged({detail: {value}}) {
-        if (this._ankiConnect.server === null) { return; }
-        this._ankiConnect.enabled = typeof value === 'boolean' && value;
+        if (this._ankiServer === null) { return; }
+        this._ankiEnabled = typeof value === 'boolean' && value;
 
         for (const cardController of this._selectorObserver.datas()) {
             void cardController.updateAnkiState();
@@ -462,7 +458,7 @@ export class AnkiController {
      */
     async _getDeckNames() {
         try {
-            const result = await this._ankiConnect.getDeckNames();
+            const result = await this._application.api.getAnkiDeckNames();
             this._sortStringArray(result);
             return [result, null];
         } catch (e) {
@@ -475,7 +471,7 @@ export class AnkiController {
      */
     async _getModelNames() {
         try {
-            const result = await this._ankiConnect.getModelNames();
+            const result = await this._application.api.getAnkiModelNames();
             this._sortStringArray(result);
             return [result, null];
         } catch (e) {
@@ -496,7 +492,7 @@ export class AnkiController {
         /** @type {HTMLElement} */ (this._ankiErrorMessageDetailsContainer).hidden = true;
         /** @type {HTMLElement} */ (this._ankiErrorMessageDetailsToggle).hidden = true;
         /** @type {HTMLElement} */ (this._ankiErrorInvalidResponseInfo).hidden = true;
-        ankiErrorMessageNode.textContent = (this._ankiConnect.enabled ? 'Connected' : 'Not enabled');
+        ankiErrorMessageNode.textContent = (this._ankiEnabled ? 'Connected' : 'Not enabled');
         ankiErrorMessageNode.classList.remove('danger-text');
         /** @type {HTMLElement} */ (this._ankiErrorMessageDetailsNode).textContent = '';
         this._ankiError = null;
@@ -614,7 +610,7 @@ export class AnkiController {
      * @returns {Promise<?((number | null)[] | null)>}
      */
     async addNotes(notes) {
-        return await this._ankiConnect.addNotes(notes);
+        return await this._application.api.addAnkiNotes(notes);
     }
 
     /**
@@ -622,7 +618,7 @@ export class AnkiController {
      * @returns {Promise<boolean[]>}
      */
     async canAddNotes(notes) {
-        return await this._ankiConnect.canAddNotes(notes);
+        return await this._application.api.canAddAnkiNotes(notes);
     }
 
     /**

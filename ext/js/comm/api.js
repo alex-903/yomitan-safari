@@ -97,11 +97,49 @@ export class API {
     }
 
     /**
+     * @returns {Promise<import('api').ApiReturn<'getAnkiDeckNames'>>}
+     */
+    getAnkiDeckNames() {
+        return this._invoke('getAnkiDeckNames', void 0);
+    }
+
+    /**
+     * @returns {Promise<import('api').ApiReturn<'getAnkiModelNames'>>}
+     */
+    getAnkiModelNames() {
+        return this._invoke('getAnkiModelNames', void 0);
+    }
+
+    /**
+     * @param {import('api').ApiParam<'getAnkiModelFieldNames', 'modelName'>} modelName
+     * @returns {Promise<import('api').ApiReturn<'getAnkiModelFieldNames'>>}
+     */
+    getAnkiModelFieldNames(modelName) {
+        return this._invoke('getAnkiModelFieldNames', {modelName});
+    }
+
+    /**
      * @param {import('api').ApiParam<'addAnkiNote', 'note'>} note
      * @returns {Promise<import('api').ApiReturn<'addAnkiNote'>>}
      */
     addAnkiNote(note) {
         return this._invoke('addAnkiNote', {note});
+    }
+
+    /**
+     * @param {import('api').ApiParam<'addAnkiNotes', 'notes'>} notes
+     * @returns {Promise<import('api').ApiReturn<'addAnkiNotes'>>}
+     */
+    addAnkiNotes(notes) {
+        return this._invoke('addAnkiNotes', {notes});
+    }
+
+    /**
+     * @param {import('api').ApiParam<'canAddAnkiNotes', 'notes'>} notes
+     * @returns {Promise<import('api').ApiReturn<'canAddAnkiNotes'>>}
+     */
+    canAddAnkiNotes(notes) {
+        return this._invoke('canAddAnkiNotes', {notes});
     }
 
     /**
@@ -232,6 +270,21 @@ export class API {
      */
     getZoom() {
         return this._invoke('getZoom', void 0);
+    }
+
+    /**
+     * @returns {Promise<import('api').ApiReturn<'getSafariInlineScanEnabled'>>}
+     */
+    getSafariInlineScanEnabled() {
+        return this._invoke('getSafariInlineScanEnabled', void 0);
+    }
+
+    /**
+     * @param {import('api').ApiParam<'setSafariInlineScanEnabled', 'enabled'>} enabled
+     * @returns {Promise<import('api').ApiReturn<'setSafariInlineScanEnabled'>>}
+     */
+    setSafariInlineScanEnabled(enabled) {
+        return this._invoke('setSafariInlineScanEnabled', {enabled});
     }
 
     /**

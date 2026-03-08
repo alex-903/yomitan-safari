@@ -171,8 +171,10 @@ xcrun safari-web-extension-converter \
     --force
 
 python3 - "$PROJECT_LOCATION" "$APP_NAME" "$BUNDLE_IDENTIFIER" <<'PY'
+import plistlib
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 project_location = Path(sys.argv[1])
@@ -183,6 +185,11 @@ extension_bundle_identifier = f"{bundle_identifier}.extension"
 project_root = project_location / app_name
 pbxproj_path = project_root / f"{app_name}.xcodeproj" / "project.pbxproj"
 view_controller_path = project_root / app_name / "ViewController.swift"
+extension_root = project_root / f"{app_name} Extension"
+handler_path = extension_root / "SafariWebExtensionHandler.swift"
+app_info_plist_path = project_root / app_name / "Info.plist"
+extension_info_plist_path = extension_root / "Info.plist"
+anki_connect_js_path = extension_root / "Resources" / "js" / "comm" / "anki-connect.js"
 
 pbxproj = pbxproj_path.read_text(encoding="utf-8")
 
@@ -205,6 +212,131 @@ view_controller = re.sub(
     view_controller,
 )
 view_controller_path.write_text(view_controller, encoding="utf-8")
+
+handler_source = textwrap.dedent(
+    """
+    //
+    //  SafariWebExtensionHandler.swift
+    //  __APP_NAME__ Extension
+    //
+
+    import Foundation
+    import SafariServices
+    import os.log
+
+    class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
+        private let supportedHosts = Set(["localhost", "127.0.0.1", "::1"])
+
+        func beginRequest(with context: NSExtensionContext) {
+            let request = context.inputItems.first as? NSExtensionItem
+
+            let message: Any?
+            if #available(iOS 15.0, macOS 11.0, *) {
+                message = request?.userInfo?[SFExtensionMessageKey]
+            } else {
+                message = request?.userInfo?["message"]
+            }
+
+            guard let body = message as? [String: Any] else {
+                os_log(.error, "Received invalid native message payload from Safari web extension")
+                complete(context: context, response: ["error": "Invalid native message payload"])
+                return
+            }
+
+            handle(message: body, context: context)
+        }
+
+        private func handle(message: [String: Any], context: NSExtensionContext) {
+            guard let action = message["action"] as? String else {
+                complete(context: context, response: ["error": "Missing action"])
+                return
+            }
+
+            switch action {
+                case "ankiRequest":
+                    proxyAnkiRequest(message: message, context: context)
+                default:
+                    complete(context: context, response: ["error": "Unsupported action: " + action])
+            }
+        }
+
+        private func proxyAnkiRequest(message: [String: Any], context: NSExtensionContext) {
+            guard let urlString = message["url"] as? String, let url = URL(string: urlString) else {
+                complete(context: context, response: ["error": "Invalid URL"])
+                return
+            }
+            guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+                complete(context: context, response: ["error": "Unsupported URL scheme"])
+                return
+            }
+            guard let host = url.host?.lowercased(), supportedHosts.contains(host) else {
+                complete(context: context, response: ["error": "Only loopback AnkiConnect URLs are supported"])
+                return
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = (message["method"] as? String) ?? "POST"
+            request.timeoutInterval = 10.0
+
+            if let headers = message["headers"] as? [String: Any] {
+                for (header, value) in headers {
+                    if let value = value as? String {
+                        request.setValue(value, forHTTPHeaderField: header)
+                    }
+                }
+            }
+
+            if let requestBody = message["body"] as? String {
+                request.httpBody = requestBody.data(using: .utf8)
+            }
+
+            let configuration = URLSessionConfiguration.ephemeral
+            let session = URLSession(configuration: configuration)
+            let task = session.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    os_log(.error, "Anki proxy request failed: %{public}@", error.localizedDescription)
+                    self.complete(context: context, response: ["error": error.localizedDescription])
+                    return
+                }
+
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                let responseText = String(data: data ?? Data(), encoding: .utf8) ?? ""
+                self.complete(context: context, response: ["status": status, "responseText": responseText])
+            }
+            task.resume()
+        }
+
+        private func complete(context: NSExtensionContext, response: [String: Any]) {
+            let item = NSExtensionItem()
+            if #available(iOS 15.0, macOS 11.0, *) {
+                item.userInfo = [SFExtensionMessageKey: response]
+            } else {
+                item.userInfo = ["message": response]
+            }
+            context.completeRequest(returningItems: [item], completionHandler: nil)
+        }
+    }
+    """
+).strip() + "\n"
+handler_source = handler_source.replace("__APP_NAME__", app_name)
+handler_path.write_text(handler_source, encoding="utf-8")
+
+anki_connect_js = anki_connect_js_path.read_text(encoding="utf-8")
+anki_connect_js = re.sub(
+    r"this\._nativeMessagingApplications = \[[^\]]*\];",
+    f"this._nativeMessagingApplications = ['{extension_bundle_identifier}', '{bundle_identifier}', 'yomitan_anki'];",
+    anki_connect_js,
+    count=1,
+)
+anki_connect_js_path.write_text(anki_connect_js, encoding="utf-8")
+
+for info_plist_path in (app_info_plist_path, extension_info_plist_path):
+    with info_plist_path.open("rb") as file:
+        info_plist = plistlib.load(file)
+    app_transport_security = info_plist.setdefault("NSAppTransportSecurity", {})
+    app_transport_security["NSAllowsLocalNetworking"] = True
+    with info_plist_path.open("wb") as file:
+        plistlib.dump(info_plist, file)
 PY
 
 printf 'Safari WebExtension bundle: %s\n' "$WEB_EXTENSION_DIR"
